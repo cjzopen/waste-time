@@ -1,0 +1,945 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VOID VOYAGER | 虛無旅者</title>
+<meta name="description" content="基於Google AI API的網頁，用於浪費你的時間。">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@300;500&family=Noto+Sans+TC:wght@100..900&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --font-main: 'Noto Sans TC', sans-serif;
+    --font-tech: 'Fira Code', monospace;
+    --color-bg-start: #050505;
+    --color-text-start: #e0e0e0;
+    --color-bg-end: #fcfcfc;
+    --color-text-end: #111;
+    --color-accent: #0ff;
+    --color-alert: #f33;
+    --z-map: 1;
+    --z-ui: 10;
+    --z-warning: 50; /* Top level */
+    --z-screen: 20;
+  }
+
+  /* Reset & Base */
+  *, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    font-family: var(--font-main);
+    text-autospace: normal;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    background-color: var(--color-bg-start);
+  }
+
+  /* Utilities */
+  .hidden {
+    opacity: 0 !important;
+    pointer-events: none !important;
+    transition: opacity 0.8s ease;
+  }
+
+  .visible {
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    transition: opacity 0.8s ease;
+  }
+
+  /* Scanline Effect Overlay */
+  .scanline {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,0) 50%, rgba(0,0,0,0.1) 50%, rgba(0,0,0,0.1));
+    background-size: 100% 4px;
+    pointer-events: none;
+    z-index: 15;
+    opacity: 0.3;
+  }
+
+  /* Screens Wrapper */
+  section {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    padding: 2rem;
+  }
+
+  /* =========================================
+     P5 Style Warning Overlay
+     ========================================= */
+  #warning-overlay {
+    background-color: var(--color-bg-start);
+    z-index: var(--z-warning);
+    background-image: radial-gradient(#222 1px, transparent 1px);
+    background-size: 20px 20px;
+  }
+
+  .p5-wrapper {
+    position: relative;
+    transform: rotate(-3deg);
+    animation: slamIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+  }
+
+  .p5-box {
+    background: #fff;
+    color: #000;
+    padding: 2.5rem 4rem;
+    position: relative;
+    clip-path: polygon(2% 0%, 100% 0%, 98% 100%, 0% 95%);
+    box-shadow: 10px 10px 0 var(--color-alert);
+  }
+
+  .p5-stripes {
+    position: absolute;
+    top: -20px;
+    left: 10%;
+    width: 80%;
+    height: 30px;
+    background: repeating-linear-gradient(45deg, var(--color-alert), var(--color-alert) 10px, transparent 10px, transparent 20px);
+    z-index: -1;
+    transform: skewX(-20deg);
+  }
+
+  .p5-alert-header {
+    font-family: var(--font-tech);
+    font-weight: 900;
+    font-size: 1.5rem;
+    background: #000;
+    color: var(--color-alert);
+    display: inline-block;
+    padding: 0.2rem 1rem;
+    transform: skewX(-10deg) rotate(-2deg);
+    margin-bottom: 1.5rem;
+    border: 2px solid var(--color-alert);
+  }
+
+  .p5-content {
+    font-weight: 700;
+    font-size: 1rem;
+    line-height: 1.5;
+    text-align: center;
+    .highlight { color: var(--color-alert); font-weight: 900; }
+  }
+
+  .p5-btn {
+    margin-top: 2rem;
+    background: #000;
+    color: #fff;
+    border: none;
+    font-family: var(--font-tech);
+    font-size: 1.2rem;
+    padding: 0.8rem 3rem;
+    cursor: pointer;
+    clip-path: polygon(10% 0, 100% 0, 90% 100%, 0% 100%);
+    transition: all 0.2s;
+    font-weight: bold;
+    letter-spacing: 1px;
+    
+    &:hover {
+      background: var(--color-alert);
+      color: #000;
+      transform: scale(1.05) rotate(1deg);
+    }
+  }
+
+  @keyframes slamIn {
+    0% { opacity: 0; transform: scale(2) rotate(10deg); }
+    100% { opacity: 1; transform: scale(1) rotate(-3deg); }
+  }
+
+  /* Intro Screen */
+  #intro-screen {
+    background-color: var(--color-bg-start);
+    color: var(--color-text-start);
+    z-index: var(--z-screen);
+
+    .intro-card {
+      max-width: 600px;
+      width: 90%;
+      background: rgba(0, 0, 0, 0.75);
+      border-top: 1px solid #fff;
+      border-bottom: 1px solid #fff;
+      padding: 3rem 2rem;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+
+      &::before, &::after {
+        content: '';
+        position: absolute;
+        width: 10px;
+        height: 10px;
+        border: 1px solid var(--color-accent);
+      }
+      &::before { top: -5px; left: -5px; border-right: none; border-bottom: none; }
+      &::after { bottom: -5px; right: -5px; border-left: none; border-top: none; }
+    }
+
+    h1 {
+      font-family: var(--font-tech);
+      font-size: clamp(2rem, 6vw, 4rem);
+      font-weight: 900;
+      letter-spacing: 0.2em;
+      margin-bottom: 0;
+      text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+      line-height: 1.2;
+    }
+
+    h2 {
+      font-family: var(--font-tech);
+      font-size: clamp(0.8rem, 2.5vw, 1.2rem);
+      font-weight: 300;
+      letter-spacing: 0.8em;
+      margin-bottom: 2rem;
+      opacity: 0.7;
+      border-bottom: 1px solid #333;
+      padding-bottom: 0.5rem;
+      line-height: 1.4;
+    }
+
+    .intro-text {
+      margin-top: 1rem;
+      text-align: center;
+      p {
+        font-size: clamp(0.9rem, 2.5vw, 1rem);
+        line-height: 1.6;
+        margin-bottom: 0.5rem;
+        color: #ccc;
+      }
+    }
+    
+    .api-input-wrapper {
+      margin-top: 2rem;
+      width: 100%;
+      max-width: 320px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 5px;
+    }
+
+    #api-key-input {
+      width: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      border: 1px solid #333;
+      border-bottom: 2px solid var(--color-accent);
+      color: var(--color-accent);
+      font-family: var(--font-tech);
+      font-size: 0.85rem;
+      padding: 0.8rem;
+      text-align: center;
+      outline: none;
+      transition: all 0.3s;
+      
+      &:focus {
+        background: rgba(0, 255, 255, 0.05);
+        box-shadow: 0 0 15px rgba(0, 255, 255, 0.1);
+      }
+      
+      &::placeholder {
+        color: #444;
+        font-size: 0.7rem;
+        letter-spacing: 1px;
+      }
+    }
+    
+    .api-note {
+      font-size: 0.6rem;
+      color: #666;
+      font-family: var(--font-tech);
+      letter-spacing: 0.5px;
+    }
+
+    button {
+      margin-top: 1.5rem;
+      padding: 0.8rem 2.5rem;
+      font-size: 1rem;
+      background: transparent;
+      color: var(--color-accent);
+      border: 1px solid var(--color-accent);
+      cursor: pointer;
+      font-family: var(--font-tech);
+      letter-spacing: 2px;
+      transition: all 0.3s ease;
+      box-shadow: 0 0 10px rgba(0, 255, 255, 0.1);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      &:hover { background: var(--color-accent); color: #000; box-shadow: 0 0 20px rgba(0, 255, 255, 0.6); }
+      svg { width: 18px; height: 18px; }
+    }
+  }
+
+  /* Travel Screen */
+  #travel-screen {
+    z-index: var(--z-map);
+    display: block; 
+  }
+
+  #map {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: var(--z-map);
+    background: #000;
+    filter: brightness(0.7) contrast(1.2) grayscale(0.3);
+  }
+
+  #ui-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: var(--z-ui);
+    pointer-events: none;
+    
+    .hud-panel {
+      position: absolute;
+      background: rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(4px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 15px;
+      color: #fff;
+      font-family: var(--font-tech);
+      transition: transform 0.6s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.6s ease;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    
+    .top-left {
+      top: 20px;
+      left: 20px;
+      border-left: 3px solid var(--color-accent);
+      text-align: left;
+      
+      h3 { font-size: clamp(1rem, 2.5vw, 1.4rem); color: #fff; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 1px; }
+      span { display: block; font-size: 0.7rem; color: var(--color-accent); opacity: 0.8; }
+    }
+
+    .top-right {
+      top: 20px;
+      right: 20px;
+      border-right: 3px solid var(--color-alert);
+      text-align: right;
+      display: block; 
+      
+      span { display: block; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 5px; color: #ccc; }
+      div { font-size: clamp(1.5rem, 4vw, 2rem); color: var(--color-alert); font-weight: 500; text-shadow: 0 0 5px rgba(255, 50, 50, 0.5); }
+    }
+
+    .loading-status {
+      position: absolute;
+      top: 40%; 
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-family: var(--font-main);
+      color: var(--color-accent);
+      font-size: 1rem;
+      letter-spacing: 2px;
+      text-shadow: 0 0 8px var(--color-accent);
+      opacity: 0;
+      transition: opacity 0.3s;
+      background: rgba(0,0,0,0.8);
+      padding: 10px 20px;
+      border: 1px solid var(--color-accent);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      svg { width: 24px; height: 24px; animation: birdFloat 1s ease-in-out infinite alternate; }
+    }
+    .loading-status.active { opacity: 1; }
+
+    .center-content {
+      position: absolute;
+      bottom: 10%;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 90%;
+      max-width: 700px;
+      pointer-events: auto;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end; 
+      gap: 10px;
+
+      .nonsense-card {
+        width: 100%; 
+        background: rgba(0, 0, 0, 0.75);
+        border-top: 1px solid #fff;
+        border-bottom: 1px solid #fff;
+        padding: 2rem;
+        color: #fff;
+        min-height: 120px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: relative; 
+        transition: opacity 0.5s ease, transform 0.5s ease;
+        
+        &::before, &::after {
+          content: '';
+          position: absolute;
+          width: 10px;
+          height: 10px;
+          border: 1px solid var(--color-accent);
+          transition: all 0.3s ease;
+        }
+        &::before { top: -5px; left: -5px; border-right: none; border-bottom: none; }
+        &::after { bottom: -5px; right: -5px; border-left: none; border-top: none; }
+        
+        p {
+          font-size: clamp(1rem, 2.5vw, 1.3rem);
+          line-height: 1.8;
+          font-weight: 300;
+          margin: 0;
+          text-align: justify;
+          text-align-last: center;
+        }
+
+        #signal-status {
+          position: absolute;
+          top: 8px;
+          left: 10px;
+          font-family: var(--font-tech);
+          font-size: 0.7rem;
+          color: var(--color-accent);
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          opacity: 0;
+          transition: opacity 0.3s;
+          pointer-events: none;
+          svg { width: 14px; height: 14px; }
+          &.active { opacity: 1; animation: pulse 1s infinite; }
+        }
+      }
+
+      button {
+        padding: 0.8rem 2.5rem;
+        background: #fff;
+        color: #000;
+        border: none;
+        font-family: var(--font-main);
+        font-weight: 700;
+        letter-spacing: 1px;
+        cursor: pointer;
+        font-size: 1rem;
+        transition: all 0.2s;
+        clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        &:hover { background: var(--color-accent); transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,255,255,0.3); }
+        &:disabled { background: #555; color: #888; cursor: not-allowed; transform: none; box-shadow: none; }
+        svg { width: 18px; height: 18px; }
+      }
+    }
+  }
+
+  /* End Screen */
+  #end-screen {
+    background-color: var(--color-bg-end);
+    color: var(--color-text-end);
+    z-index: var(--z-screen);
+
+    h2 {
+      font-size: clamp(2rem, 6vw, 4rem);
+      margin-bottom: 2rem;
+      font-weight: 900;
+      letter-spacing: -0.05em;
+      animation: textWave 6s ease-in-out infinite;
+      filter: blur(0px);
+      transform-origin: center;
+      color: #000;
+      line-height: 1.1;
+    }
+
+    .result-box {
+      border: none;
+      box-shadow: none;
+      background: transparent;
+      padding: 0;
+      margin: 1rem 0;
+      text-align: center;
+      
+      p {
+        font-size: 1rem;
+        line-height: 1.6;
+        margin-bottom: 1rem;
+        font-weight: 300;
+        color: #666; 
+      }
+      
+      .final-time {
+        font-family: var(--font-tech);
+        font-size: 1.5rem;
+        font-weight: 300;
+        display: block;
+        margin: 0.5rem 0;
+        color: #999;
+        border: none;
+      }
+    }
+    
+    .logo-mini {
+      position: absolute;
+      bottom: 2rem;
+      font-family: var(--font-tech);
+      font-size: 0.7rem;
+      letter-spacing: 0.3em;
+      opacity: 0.2;
+    }
+  }
+
+  /* Audio Toggle Button */
+  #audio-toggle {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 100;
+    background: transparent;
+    border: none;
+    color: #888;
+    cursor: pointer;
+    opacity: 0.5;
+    transition: opacity 0.3s;
+    &:hover { opacity: 1; }
+    svg { width: 24px; height: 24px; }
+  }
+
+  @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  @keyframes birdFloat { from { transform: translateY(2px); } to { transform: translateY(-2px); } }
+  @keyframes pulse { 0% { opacity: 0.6; } 50% { opacity: 1; } 100% { opacity: 0.6; } }
+  @keyframes textWave {
+    0% { transform: skewX(0deg) translateY(0); filter: blur(0px); letter-spacing: -0.05em; }
+    25% { transform: skewX(2deg) translateY(-2px); filter: blur(1px); }
+    50% { transform: skewX(-1deg) translateY(0); filter: blur(0px); letter-spacing: 0em; }
+    75% { transform: skewX(1deg) translateY(2px); filter: blur(0.5px); }
+    100% { transform: skewX(0deg) translateY(0); filter: blur(0px); letter-spacing: -0.05em; }
+  }
+  
+  .hud-hidden { opacity: 0; transform: scale(0.95); pointer-events: none; }
+  .hud-visible { opacity: 1; transform: scale(1); pointer-events: auto; }
+
+</style>
+<!-- 引入 Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+</head>
+<body>
+
+  <!-- Audio Toggle -->
+  <button id="audio-toggle" onclick="audioEngine.toggleMute()" title="切換音效">
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
+  </button>
+
+  <div class="scanline"></div>
+
+  <!-- 0. Warning Overlay (P5 Style) -->
+  <section id="warning-overlay" class="visible">
+    <div class="p5-wrapper">
+      <div class="p5-stripes"></div>
+      <div class="p5-box">
+        <div class="p5-alert-header">SYSTEM WARNING</div>
+        <div class="p5-content">
+          <p>前方偵測到 <span class="highlight">空虛與噪音</span>，注意音量。</p>
+          <p>The next scene contains background audio.</p>
+        </div>
+        <button class="p5-btn" onclick="app.dismissWarning()">I UNDERSTAND</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 1. 開場畫面 -->
+  <section id="intro-screen" class="hidden">
+    <div class="intro-card">
+      <h1>虛無旅者</h1>
+      <h2>VOID VOYAGER</h2>
+      <div class="intro-text">
+        <p>這是一場旨在追求「無意義」的全球巡禮。</p>
+        <p>我們利用大數據重構您的空虛感。</p>
+        <p>每一站，我們都將賦能您一句精美的廢話。</p>
+      </div>
+      
+      <div class="api-input-wrapper">
+        <input type="password" id="api-key-input" placeholder="ENTER GEMINI API KEY (OPTIONAL)">
+        <span class="api-note">LEAVE EMPTY TO USE DEFAULT DATASET</span>
+      </div>
+
+      <button onclick="app.startJourney()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+        INIT_SYSTEM_
+      </button>
+    </div>
+  </section>
+
+  <!-- 2. 旅程畫面 (地圖 + UI) -->
+  <div id="travel-screen" class="hidden">
+    <div id="map"></div>
+    <div id="ui-layer">
+      
+      <!-- Loading Indicator -->
+      <div id="loading-indicator" class="loading-status">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 7h.01"/><path d="M3.4 18H12a8 8 0 0 0 8-8V7a4 4 0 0 0-7.28-2.3L2 20"/><path d="m20 7 2 .5-2 .5"/><path d="M10 18v3"/><path d="M14 17.75V21"/><path d="M7 18a6 6 0 0 0 3.84-10.61"/></svg>
+        <span id="loading-text">放空飛行中</span>
+      </div>
+
+      <!-- HUD: Left Top -->
+      <div id="hud-left" class="hud-panel top-left hud-visible">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg>
+        <div>
+            <h3 id="loc-name">定位中...</h3>
+            <span id="loc-coords">LAT: -- | LNG: --</span>
+        </div>
+      </div>
+
+      <!-- HUD: Right Top -->
+      <div id="hud-right" class="hud-panel top-right hud-visible">
+        <span>WASTED TIME</span>
+        <div id="timer-display">00:00</div>
+      </div>
+      
+      <!-- HUD: Center Bottom -->
+      <div class="center-content">
+        <div id="hud-nonsense" class="nonsense-card hud-visible">
+          <!-- Connecting Status -->
+          <div id="signal-status">
+             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"></path><path d="M1.42 9a16 16 0 0 1 21.16 0"></path><path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path><line x1="12" y1="20" x2="12.01" y2="20"></line></svg>
+             CONNECTING...
+          </div>
+          <p id="nonsense-container">
+            <span id="nonsense-text"></span>
+          </p>
+        </div>
+        <button id="next-btn" onclick="app.nextStop()" class="hud-visible">
+          下一站
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. 結束畫面 -->
+  <section id="end-screen" class="hidden">
+    <h2>旅程結束。<br>您獲得了什麼？</h2>
+    <div class="result-box">
+      <p>恭喜您完成了全球生態位的閉環。</p>
+      <p>我們成功地將</p>
+      <span class="final-time" id="final-time-display">00 秒</span>
+      <p>轉化為不可回收的沈沒成本。</p>
+      <p style="opacity: 0.5; margin-top: 3rem;">這就是數據驅動的空虛。</p>
+    </div>
+    <div class="logo-mini">VOID VOYAGER PROJECT</div>
+  </section>
+
+<script>
+const audioEngine = {
+    ctx: null, isMuted: false, oceanNode: null,
+    init: function() {
+        if (this.ctx) return;
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        this.ctx = new AudioContext();
+        this.startOceanSound();
+    },
+    toggleMute: function() {
+        this.isMuted = !this.isMuted;
+        if (this.ctx) { this.isMuted ? this.ctx.suspend() : this.ctx.resume(); }
+        const btn = document.getElementById('audio-toggle');
+        btn.style.opacity = this.isMuted ? 0.3 : 0.8;
+        btn.innerHTML = this.isMuted ? 
+            `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>` : 
+            `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>`;
+    },
+    startOceanSound: function() {
+        if (!this.ctx) return;
+        const bufferSize = 4 * this.ctx.sampleRate;
+        const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1; 
+        const noise = this.ctx.createBufferSource();
+        noise.buffer = buffer; noise.loop = true;
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'lowpass'; filter.Q.value = 0.5;
+        const gain = this.ctx.createGain();
+        gain.gain.value = 0.04;
+        const lfo = this.ctx.createOscillator();
+        lfo.type = 'sine'; lfo.frequency.value = 0.08;
+        const lfoGain = this.ctx.createGain();
+        lfoGain.gain.value = 400; filter.frequency.value = 500;
+        lfo.connect(lfoGain); lfoGain.connect(filter.frequency);
+        noise.connect(filter); filter.connect(gain); gain.connect(this.ctx.destination);
+        noise.start(); lfo.start();
+        this.oceanNode = gain;
+    },
+    playClick: function() {
+        if (!this.ctx || this.isMuted) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.frequency.setValueAtTime(800, this.ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(300, this.ctx.currentTime + 0.1);
+        gain.gain.setValueAtTime(0.08, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.1);
+        osc.connect(gain); gain.connect(this.ctx.destination);
+        osc.start(); osc.stop(this.ctx.currentTime + 0.1);
+    }
+};
+
+const app = {
+  map: null,
+  startTime: null,
+  timerInterval: null,
+  currentStopIndex: -1,
+  totalStops: 7,
+  typingInterval: null,
+  userApiKey: null, 
+
+  // 備用數據庫 (當 API 失敗時使用)
+  fallbackLocations: [
+    { name: "ISL. REYKJAVIK", lat: 64.1466, lng: -21.9426, nonsense: "極光的絢爛只是大氣層的電子躍遷，我們仰望，不過是為了確認黑暗依然存在。" },
+    { name: "CHL. EASTER ISLAND", lat: -27.1127, lng: -109.3497, nonsense: "石像背對著大海，凝視著千年的虛空，它們不說話，因為連沉默都是多餘的。" },
+    { name: "EGY. GIZA", lat: 29.9792, lng: 31.1342, nonsense: "風沙掩埋了法老的驕傲，時間證明了，永恆不過是比較漫長的風化過程。" },
+    { name: "JPN. SHIBUYA", lat: 35.6591, lng: 139.7006, nonsense: "在擁擠的十字路口，每個人都急著去某個地方，卻沒有人知道為什麼要出發。" },
+    { name: "ATA. MCMURDO", lat: -77.8463, lng: 166.6681, nonsense: "這裡的白色太過純粹，以至於連「無」都顯得有些擁擠，寒冷是宇宙唯一的真理。" }
+  ],
+  
+  dismissWarning: function() {
+    document.getElementById('warning-overlay').classList.replace('visible', 'hidden');
+    setTimeout(() => { document.getElementById('intro-screen').classList.replace('hidden', 'visible'); }, 500);
+  },
+
+  startJourney: function() {
+    const inputKey = document.getElementById('api-key-input').value.trim();
+    this.userApiKey = inputKey !== "" ? inputKey : null;
+    
+    audioEngine.init();
+    audioEngine.playClick();
+    document.getElementById('intro-screen').classList.replace('visible', 'hidden');
+    document.getElementById('travel-screen').classList.replace('hidden', 'visible');
+    
+    // 強制重繪地圖以避免破圖
+    setTimeout(() => {
+        if(this.map) this.map.invalidateSize();
+    }, 100);
+
+    this.startTime = Date.now();
+    this.timerInterval = setInterval(() => this.updateTimer(), 1000);
+    if (!this.map) {
+      this.map = L.map('map', { zoomControl: false, attributionControl: false }).setView([0, 0], 2);
+      L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { attribution: 'Tiles &copy; Esri' }).addTo(this.map);
+    }
+    this.nextStop();
+  },
+
+  formatDuration: function(totalSeconds, isChineseFormat = false) {
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    const pad = (n) => n.toString().padStart(2, '0');
+    if (isChineseFormat) {
+        let parts = [];
+        if (hours > 0) parts.push(`${hours} 小時`);
+        if (minutes > 0 || hours > 0) parts.push(`${minutes} 分`);
+        parts.push(`${seconds} 秒`);
+        return parts.join(' ');
+    } else {
+        return (hours > 0) ? `${pad(hours)}:${pad(minutes)}:${pad(seconds)}` : `${pad(minutes)}:${pad(seconds)}`;
+    }
+  },
+
+  updateTimer: function() {
+    const now = Date.now();
+    const diff = Math.floor((now - this.startTime) / 1000);
+    document.getElementById('timer-display').innerText = this.formatDuration(diff, false);
+  },
+
+  setUIState: function(state) {
+    const els = {
+      hudLeft: document.getElementById('hud-left'),
+      hudNonsense: document.getElementById('hud-nonsense'),
+      nextBtn: document.getElementById('next-btn'),
+      loadingEl: document.getElementById('loading-indicator'),
+      loadingText: document.getElementById('loading-text'),
+      signalStatus: document.getElementById('signal-status'),
+      nonsenseText: document.getElementById('nonsense-text')
+    };
+
+    if (state === 'flying') {
+      els.hudLeft.classList.replace('hud-visible', 'hud-hidden');
+      els.hudNonsense.classList.replace('hud-visible', 'hud-hidden');
+      els.nextBtn.classList.replace('hud-visible', 'hud-hidden');
+      els.loadingText.innerText = "放空中...";
+      els.loadingEl.classList.add('active');
+    } else if (state === 'arrived_loading') {
+      els.hudLeft.classList.replace('hud-hidden', 'hud-visible');
+      els.hudNonsense.classList.replace('hud-hidden', 'hud-visible');
+      els.nextBtn.classList.replace('hud-hidden', 'hud-visible');
+      els.loadingEl.classList.remove('active');
+      els.nonsenseText.innerText = "";
+      els.signalStatus.classList.add('active');
+    } else {
+      els.hudLeft.classList.replace('hud-hidden', 'hud-visible');
+      els.hudNonsense.classList.replace('hud-hidden', 'hud-visible');
+      els.nextBtn.classList.replace('hud-hidden', 'hud-visible');
+      els.loadingEl.classList.remove('active');
+      els.signalStatus.classList.remove('active');
+    }
+  },
+
+  typeWriter: function(text, elementId) {
+    const element = document.getElementById(elementId);
+    element.innerHTML = '';
+    let i = 0;
+    if (this.typingInterval) clearInterval(this.typingInterval);
+    this.typingInterval = setInterval(() => {
+      if (i < text.length) { element.innerHTML += text.charAt(i); i++; } 
+      else { clearInterval(this.typingInterval); }
+    }, 50);
+  },
+
+  nextStop: async function() {
+    audioEngine.playClick();
+    this.currentStopIndex++;
+
+    if (this.currentStopIndex >= this.totalStops) {
+      this.endJourney();
+      return;
+    }
+
+    const btn = document.getElementById('next-btn');
+    btn.disabled = true;
+    this.setUIState('flying');
+    
+    const flyDuration = 3.5; 
+    
+    // 非同步請求 API
+    const apiPromise = this.fetchLocationFromAI();
+
+    let targetLoc = null;
+    
+    try {
+        // Timeout
+        const racePromise = Promise.race([
+            apiPromise,
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 10000))
+        ]);
+        
+        targetLoc = await racePromise;
+        
+        // 簡易驗證座標合法性
+        if (typeof targetLoc.lat !== 'number' || typeof targetLoc.lng !== 'number') {
+            throw new Error('Invalid coordinates');
+        }
+
+    } catch (e) {
+        console.warn("Using fallback location:", e);
+        targetLoc = this.fallbackLocations[this.currentStopIndex % this.fallbackLocations.length];
+        targetLoc.lat += (Math.random() - 0.5) * 5;
+        targetLoc.lng += (Math.random() - 0.5) * 5;
+    }
+
+    // 降低 Zoom Level 以確保地圖可見
+    this.map.flyTo([targetLoc.lat, targetLoc.lng], 10, {
+      duration: flyDuration,
+      easeLinearity: 0.2
+    });
+
+    setTimeout(() => {
+      document.getElementById('loc-name').innerText = targetLoc.name;
+      document.getElementById('loc-coords').innerText = `LAT: ${targetLoc.lat.toFixed(4)} | LNG: ${targetLoc.lng.toFixed(4)}`;
+      
+      this.setUIState('arrived_loading');
+      btn.innerHTML = `訊號接收中...`;
+      
+      setTimeout(() => {
+          this.setUIState('arrived');
+          this.typeWriter(targetLoc.nonsense, 'nonsense-text');
+
+          btn.disabled = false;
+          if (this.currentStopIndex === this.totalStops - 1) {
+             btn.innerHTML = `結束旅程 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path><line x1="12" y1="2" x2="12" y2="12"></line></svg>`;
+          } else {
+             btn.innerHTML = `下一站 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>`;
+          }
+      }, 1500);
+      
+    }, flyDuration * 1000); 
+  },
+
+  fetchLocationFromAI: async function() {
+    if (!this.userApiKey) {
+        throw new Error('No API Key provided');
+    }
+    
+    // Updated Model Name
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${this.userApiKey}`;
+    
+    const prompt = `
+  Generate a random travel destination anywhere in the world (avoid famous capitals if possible, choose interesting remote or distinct places).
+  Return ONLY a JSON object with this structure (no markdown, no code blocks):
+  {
+    "name": "City, Country (in Traditional Chinese)",
+    "lat": number (latitude),
+    "lng": number (longitude),
+    "nonsense": "Generate a poetic, existential sentence in Traditional Chinese (45-75 characters). Rules: 1. STRICT SPECIFICITY: You MUST use the Specific Proper Noun of the landmark/entity in the sentence (e.g., not just 'the mountain', but 'Mt. Kilimanjaro'; not just 'the train', but 'The Enoden Line'). 2. VISUAL ANCHOR: Describe a physical trait unique to this specific place (color, shape, material, specific behavior). If the sentence could apply to another place, it is a FAILURE. 3. STYLE: Modern Written Chinese (現代白話文), melancholic and philosophical. 4. Structure: [Specific Subject] + [Unique Visual Action/State] -> [Existential Conclusion]. Example target: '艾摩爾石像背對著大海，凝視著千年的虛空，它們不說話，因為連沉默都是多餘的。'"
+  }
+`;
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { responseMimeType: "application/json" }
+        })
+      });
+
+      if (!response.ok) throw new Error(`API Error: ${response.status}`);
+      
+      const data = await response.json();
+      const text = data.candidates[0].content.parts[0].text;
+      return JSON.parse(text);
+      
+    } catch (error) {
+      console.error("AI Fetch Failed:", error);
+      throw error;
+    }
+  },
+
+  endJourney: function() {
+    audioEngine.playClick();
+    clearInterval(this.timerInterval);
+    const totalTime = Math.floor((Date.now() - this.startTime) / 1000);
+    document.getElementById('final-time-display').innerText = this.formatDuration(totalTime, true);
+    document.querySelector('.scanline').style.display = 'none';
+    document.getElementById('travel-screen').classList.replace('visible', 'hidden');
+    document.getElementById('end-screen').classList.replace('hidden', 'visible');
+  }
+};
+</script>
+</body>
+</html>
